@@ -304,10 +304,16 @@ public final class FlatMessageDeserializer<T> {
         return object;
     }
 
+    /**
+     * @param dumpMode 데이터 덤프(디버깅용) 셋팅여부, bytesToObject 호출 전에 셋팅해야 한다
+     */
     public void setDumpMode(boolean dumpMode) {
         this.dumpMode = dumpMode;
     }
 
+    /**
+     * @return dumpMode가 활성화되어 있으면 마지막 bytesToObject에 대한 필드 덤프 목록
+     */
     public List<FlatMessageDump> getFieldsDump() {
         return fieldsDump;
     }

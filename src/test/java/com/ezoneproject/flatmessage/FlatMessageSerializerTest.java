@@ -62,15 +62,19 @@ class FlatMessageSerializerTest {
 
         // serialize
         FlatMessageSerializer<TestMessage> serializer = new FlatMessageSerializer<>(TestMessage.class, StandardCharsets.UTF_8, true);
+        serializer.setDumpMode(true);
+        serializer.setAbsoluteOffset(100);      // For tests
         byte[] serializedData = serializer.objectToBytes(message);
 
         log.info("[" + new String(serializedData, StandardCharsets.UTF_8) + "] ");
         log.info("Bytes length " + serializedData.length);
 
         printDump(serializer.getFieldsDump());
+        log.debug("Last absolute offset " + serializer.getAbsoluteOffset());
 
         // deserialize
         FlatMessageDeserializer<TestMessage> deserializer = new FlatMessageDeserializer<>(TestMessage.class, StandardCharsets.UTF_8, true);
+        deserializer.setDumpMode(true);
         TestMessage deserialized = deserializer.bytesToObject(serializedData, 0);
 
         log.info("Orignal hash: " + message.hashCode());

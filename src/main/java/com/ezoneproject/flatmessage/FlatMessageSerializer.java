@@ -62,6 +62,7 @@ public final class FlatMessageSerializer<T> {
     protected String tableName = "";
     // 덤프(디버깅) 테이블 행번호 (테이블 레벨 > 0)
     protected int tableRow = 0;
+    private int absoluteOffset = 0;
 
     /**
      * 플랫 메시지를 byte 배열로 변환한다.
@@ -173,6 +174,7 @@ public final class FlatMessageSerializer<T> {
                     subSerializer.dumpMode = dumpMode;
                     subSerializer.tableLevel = tableLevel + 1;
                     subSerializer.tableName = it.dataClass.getSimpleName();
+                    subSerializer.absoluteOffset = absoluteOffset;
 
                     value = subSerializer.objectToBytes(valueObject);
 
@@ -185,13 +187,14 @@ public final class FlatMessageSerializer<T> {
 
                     // 디버깅 데이터 생성
                     if (dumpMode) {
-                        fieldsDump.add(new FlatMessageDump(it.field.getName(), it.name, offset, offset,
+                        fieldsDump.add(new FlatMessageDump(it.field.getName(), it.name, offset, absoluteOffset,
                                 value.length, new String(value, charset), tableLevel, tableName, tableRow));
                     }
                 }
 
                 System.arraycopy(value, 0, buffer, offset, value.length);
                 offset += value.length;
+                absoluteOffset += value.length;
             } else if (it.itemType == FlatFieldInfo.FieldTableType.TABLE_FIXED ||
                     it.itemType == FlatFieldInfo.FieldTableType.TABLE_VARIABLE) {
                 // 필드에 정의된 데이터 건수
@@ -217,6 +220,7 @@ public final class FlatMessageSerializer<T> {
                 tableProcess.dumpMode = dumpMode;
                 tableProcess.tableLevel = tableLevel + 1;
                 tableProcess.tableName = it.tableClass.getSimpleName();
+                tableProcess.absoluteOffset = absoluteOffset;
 
                 // 필드에 정의한 데이터 수만큼 처리하고 데이터가 더 많으면 나머지는 버림
                 for (int i = 0; i < loopCount; i++) {
@@ -246,6 +250,7 @@ public final class FlatMessageSerializer<T> {
 
                     System.arraycopy(value, 0, buffer, offset, value.length);
                     offset += value.length;
+                    absoluteOffset += value.length;
                 }
             }
         } // end for
@@ -253,12 +258,31 @@ public final class FlatMessageSerializer<T> {
         return buffer;
     }
 
+    /**
+     * @param dumpMode 데이터 덤프(디버깅용) 셋팅여부, objectToBytes 호출 전에 셋팅해야 한다
+     */
     public void setDumpMode(boolean dumpMode) {
         this.dumpMode = dumpMode;
     }
 
+    /**
+     * @return dumpMode가 활성화되어 있으면 마지막 objectToBytes 에 대한 필드 덤프 목록
+     */
     public List<FlatMessageDump> getFieldsDump() {
         return fieldsDump;
     }
 
+    /**
+     * @return 최종 절대위치 offset
+     */
+    public int getAbsoluteOffset() {
+        return absoluteOffset;
+    }
+
+    /**
+     * @param absoluteOffset dumpMode 활성화되어 있고 objectToBytes 호출 전에 필드 덤프시 사용할 절대위치 셋팅
+     */
+    public void setAbsoluteOffset(int absoluteOffset) {
+        this.absoluteOffset = absoluteOffset;
+    }
 }
