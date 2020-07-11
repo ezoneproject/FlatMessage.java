@@ -23,6 +23,7 @@ import com.ezoneproject.flatmessage.debug.FlatStringUtil;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -51,8 +52,19 @@ public final class ConversionUtil {
             for (byte b : fieldData) {
                 if (b == '.' || ((b & 0x00ff) >= (0x0030 & 0x00ff) && (b & 0x00ff) <= (0x0039 & 0x00ff)))
                     sb.append((char) b);
+                else if (b == '-') {
+                    // 음수 기호는 맨 앞에 나오거나 유효한 숫자가 시작하기 전에 나와야 함 (0만 허용)
+                    // 음수 기호는 전체 길이에 포함됨
+                    for (int i = sb.length() - 1; i >= 0; i--) {
+                        if (sb.charAt(i) != '0')
+                            throw new DataConversionException("Negative sign position: " + clsName + " [" + new String(fieldData) + "]");
+                    }
+                    sb.insert(0, '-');
+                } else if (b == '+')
+                    // 양수 기호는 0으로 변환
+                    sb.append('0');
                 else
-                    throw new DataConversionException("Not numeric: " + clsName + " [" + new String(fieldData) + "]");
+                    throw new DataConversionException("Non numeric value: " + clsName + " [" + new String(fieldData) + "]");
             }
 
             // 소수를 정수에 컨버전하려는 경우 오류 (원본은 소수, 타겟은 정수)
@@ -67,16 +79,9 @@ public final class ConversionUtil {
                 throw new DataConversionException("Decimal point detected: " + clsName + " [" + sb.toString() + "]");
 
             // 고정 소수점을 문자열에 삽입
+            // 음수 기호 또는 양수 기호는 전체 길이에 영향이 없으므로 소수점 처리도 변경되지 않음
             if (flatFieldInfo.scale > 0)
                 sb.insert(sb.length() - flatFieldInfo.scale, ".");
-
-            // 시작하는 0을 삭제
-            while (sb.length() > 1 && sb.charAt(0) == '0')
-                sb.deleteCharAt(0);
-
-            // 0.xxx 에서 정수부 0이 삭제된 경우 0 보정
-            if (sb.length() > 0 && sb.charAt(0) == '.')
-                sb.insert(0, '0');
 
             if (flatFieldInfo.field.getType() == Integer.class || flatFieldInfo.field.getType() == int.class)
                 return Integer.parseInt(sb.toString(), 10);
@@ -132,38 +137,62 @@ public final class ConversionUtil {
      * long to byte[]
      */
     public static byte[] toBytes(long value, int len) {
-        return numericStringToBytes(String.valueOf(value), len);
+        String stringValue = String.format("%1$0" + len + "d", value);
+        if (stringValue.length() > len)
+            throw new DataConversionException("Value loss occurs '" + value + "' to " + len + " bytes.");
+
+        return stringValue.getBytes(StandardCharsets.ISO_8859_1);
     }
 
     /**
-     * double to byte[]
+     * decimal(includes float, double) to byte[]
      */
-    public static byte[] toBytes(double value, int len, int scale) {
-        String sourceStr = String.valueOf(value);
-        int pointIdx = sourceStr.indexOf('.');
+    public static byte[] toBytes(BigDecimal value, int len, int scale) {
+        StringBuilder formatStr = new StringBuilder("%1$0");
+        formatStr.append(len);
 
-        // 소수점 보정
-        if (scale > 0) {
-            if (pointIdx < 0) {
-                // 정수인 경우 소수점 아래 값만큼 0을 채움
-                sourceStr = String.valueOf(value * (10 ^ scale));
-            } else {
-                // 소수점이 있는 경우 정수와 소수 분리
-                String integerStr = sourceStr.substring(0, pointIdx);
-                String minor = sourceStr.substring(pointIdx + 1);
-                if (minor.length() < scale)
-                    minor = String.valueOf(Integer.parseInt(minor) * (10 ^ (scale - minor.length())));
-                else
-                    minor = minor.substring(0, scale);
-
-                sourceStr = integerStr + minor;
-            }
-        } else if (scale == 0 && pointIdx >= 0) {
-            // 변환 대상에는 소수점이 없지만 데이터에 소수점이 있으면 소수점 아래 값 버림
-            sourceStr = sourceStr.substring(0, pointIdx);
+        // scale 값이 있으면 셋팅
+        if (scale >= 0) {
+            // 소숫점 초과 자릿수는 버림
+            value = value.setScale(scale, RoundingMode.DOWN);
+            formatStr.append(".").append(scale);
         }
 
-        return numericStringToBytes(sourceStr, len);
+        formatStr.append("f");
+
+        // String conversion
+        String stringValue = String.format(formatStr.toString(), value);
+
+        // 정수/소수 추출
+        if (stringValue.contains(".")) {
+            // 정수 추출
+            String intValue = stringValue.substring(0, stringValue.indexOf('.'));
+            // 소수 추출
+            String decValue = stringValue.substring(stringValue.indexOf('.') + 1);
+
+            // 소수점 고정이면 stringValue 보정
+            if (scale > 0)
+                stringValue = intValue + decValue;
+            else {
+                stringValue = stringValue.substring(0, len);
+                // 정수가 잘리면 오류
+                if (stringValue.length() < intValue.length())
+                    throw new DataConversionException("Value loss occurs '" + value + "' to " + len + " bytes.");
+            }
+        }
+
+        // 지정한 길이를 초과하는 경우 데이터 로스 발생
+        if (stringValue.length() > len)
+            throw new DataConversionException("Value loss occurs '" + value + "' to " + len + " bytes.");
+        else if (stringValue.length() < len) {
+            // 길이가 부족하면 보정
+            if (stringValue.charAt(0) == '-')
+                stringValue = "-0" + stringValue.substring(1);
+            else
+                stringValue = "0" + stringValue;
+        }
+
+        return stringValue.getBytes(StandardCharsets.ISO_8859_1);
     }
 
     /**
@@ -203,13 +232,13 @@ public final class ConversionUtil {
             else if (type == Long.class)
                 return toBytes((long) obj, len);
             else if (type == Float.class)
-                return toBytes(((Float) obj).doubleValue(), len, scale);
+                return toBytes(new BigDecimal(String.valueOf((float) obj)), len, scale);
             else if (type == Double.class)
-                return toBytes((double) obj, len, scale);
+                return toBytes(new BigDecimal(String.valueOf((double) obj)), len, scale);
             else if (type == BigInteger.class)
                 return toBytes(((BigInteger) obj).longValue(), len);
             else if (type == BigDecimal.class)
-                return toBytes(((BigDecimal) obj).doubleValue(), len, scale);
+                return toBytes((BigDecimal) obj, len, scale);
             else if (type == String.class)
                 return toBytes((String) obj, len, charset);
             else
@@ -217,18 +246,4 @@ public final class ConversionUtil {
         }
     }
 
-    private static byte[] numericStringToBytes(String value, int len) {
-        byte[] source = value.getBytes(StandardCharsets.ISO_8859_1);
-        byte[] target = new byte[len];
-
-        if (source.length < target.length)
-            Arrays.fill(target, (byte) '0');
-
-        // Data loss error
-        if (source.length > target.length)
-            throw new DataConversionException("Value loss occurs '" + value + "' to " + len + " bytes.");
-
-        System.arraycopy(source, 0, target, target.length - source.length, source.length);
-        return target;
-    }
 }

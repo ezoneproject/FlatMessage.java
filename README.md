@@ -56,6 +56,7 @@ byte[] 배열을 String으로 전환시 JVM에서 내부 인코딩을 UTF-16으�
 ## Releases
 
 - 0.3.0 기본 기능 구현 완료
+- 0.4.0 음수 처리 추가 및 String.format 메서드 사용 개선
 
 ## License
 
