@@ -7,7 +7,7 @@
     <groupId>com.ezoneproject</groupId>
     <artifactId>flat-message</artifactId>
     <!-- version: SNAPSHOT or RELEASE/LTS -->
-    <version>0.3.1</version>
+    <version>0.4.0</version>
     <packaging>jar</packaging>
 
     <name>Flat message processor</name>
